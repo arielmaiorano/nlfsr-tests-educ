@@ -1,0 +1,751 @@
+package ar.edu.iese.laboratorio.LFSR;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class NLFSR {
+
+	final static boolean DEBUG = false;
+
+	static boolean MickeyS[] = new boolean[160];
+	static boolean MickeyR[] = new boolean[160];
+	static boolean MickeyRmask[] = new boolean[160];
+	static boolean MickeyFB0[] = new boolean[160];
+	static boolean MickeyFB1[] = new boolean[160];
+	static boolean MickeyCOMP0[] = new boolean[159];
+	static boolean MickeyCOMP1[] = new boolean[159];
+	static boolean MickeyIV[] = new boolean[128];
+	static boolean MickeyKey[] = new boolean[128];
+
+	/**
+	 * Método estático general para la iteración de tres LFSR/NLFSR.
+	 * 
+	 * @param cantBitsRegistroA
+	 *            Cantidad de bits del registro de desplazamiento A.
+	 * @param cantBitsRegistroB
+	 *            Cantidad de bits del registro de desplazamiento B.
+	 * @param cantBitsRegistroC
+	 *            Cantidad de bits del registro de desplazamiento C.
+	 * @param formaRetroA
+	 *            Forma o fórmula de retroalimentación del registro A, por ej.:
+	 *            a0 + b2c3 + a5.
+	 * @param formaRetroB
+	 *            Forma o fórmula de retroalimentación del registro B, por ej.:
+	 *            a0 + b2c3 + a5.
+	 * @param formaRetroC
+	 *            Forma o fórmula de retroalimentación del registro C, por ej.:
+	 *            a0 + b2c3 + a5.
+	 * @param formaKeyStream
+	 *            Forma o fórmula para la generación del keystream, por ej.: b5
+	 *            + a2c4.
+	 * @param estadoInicialA
+	 *            Cadena de bits (String) del estado incial del registro A.
+	 * @param estadoInicialB
+	 *            Cadena de bits (String) del estado incial del registro B.
+	 * @param estadoInicialC
+	 *            Cadena de bits (String) del estado incial del registro C.
+	 * @param cantBitsSalida
+	 *            Cantidad de bits deseados para la salida.
+	 * @return La cadena de bits de salida (String).
+	 * @throws RuntimeException
+	 *             Conteniendo mensaje descriptivo del problema.
+	 */
+	public static String getBitsStrNLFSRs(int cantBitsRegistroA,
+			int cantBitsRegistroB, int cantBitsRegistroC, String formaRetroA,
+			String formaRetroB, String formaRetroC, String formaKeyStream,
+			String estadoInicialA, String estadoInicialB,
+			String estadoInicialC, int cantBitsSalida, int cantBitsDescarte,
+			int algo) throws RuntimeException {
+
+		// verficaciones o validaciones básicas generales
+
+		if (cantBitsSalida < 0) {
+			throw new RuntimeException("Tamaño de salida no válido.");
+
+		} else if (estadoInicialA.length() != cantBitsRegistroA) {
+			throw new RuntimeException(
+					"Longitud del estado incial de A no coincide con el tamaño de registro.");
+		} else if (estadoInicialB.length() != cantBitsRegistroB) {
+			throw new RuntimeException(
+					"Longitud del estado incial de B no coincide con el tamaño de registro.");
+		} else if (estadoInicialC.length() != cantBitsRegistroC) {
+			throw new RuntimeException(
+					"Longitud del estado incial de C no coincide con el tamaño de registro.");
+
+		} else if (cantBitsRegistroA > 0 && !estadoInicialA.matches("^[01]+$")) {
+			throw new RuntimeException(
+					"Estado incial de A no expresado en binario.");
+		} else if (cantBitsRegistroB > 0 && !estadoInicialB.matches("^[01]+$")) {
+			throw new RuntimeException(
+					"Estado incial de B no expresado en binario.");
+		} else if (cantBitsRegistroC > 0 && !estadoInicialC.matches("^[01]+$")) {
+			throw new RuntimeException(
+					"Estado incial de C no expresado en binario.");
+
+		} else if (cantBitsRegistroA > 0
+				&& !formaRetroA.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de retroalimentación de A no válida.");
+		} else if (cantBitsRegistroB > 0
+				&& !formaRetroB.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de retroalimentación de B no válida.");
+		} else if (cantBitsRegistroC > 0
+				&& !formaRetroC.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de retroalimentación de C no válida.");
+		} else if (!formaKeyStream.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de generación de keystream no válida.");
+		}
+
+		// registros con estados iniciales
+		boolean[] registroA = new boolean[cantBitsRegistroA];
+		boolean[] registroB = new boolean[cantBitsRegistroB];
+		boolean[] registroC = new boolean[cantBitsRegistroC];
+		for (int i = 0; i < cantBitsRegistroA; i++) {
+			registroA[i] = (estadoInicialA.charAt(i) == '1');
+		}
+		for (int i = 0; i < cantBitsRegistroB; i++) {
+			registroB[i] = (estadoInicialB.charAt(i) == '1');
+		}
+		for (int i = 0; i < cantBitsRegistroC; i++) {
+			registroC[i] = (estadoInicialC.charAt(i) == '1');
+		}
+
+		// parseo de formas o fórmulas
+		List<List<String>> listasRetroA = parseoFormula(formaRetroA);
+		List<List<String>> listasRetroB = parseoFormula(formaRetroB);
+		List<List<String>> listasRetroC = parseoFormula(formaRetroC);
+		List<List<String>> listasKeyStream = parseoFormula(formaKeyStream);
+
+		// retroalimentación, desplazamiento y generación de salida
+		StringBuilder sbSalida = new StringBuilder(cantBitsSalida);
+		for (int i = 0; i < cantBitsSalida; i++) {
+
+			if (algo == 3) { // mickey
+
+				// init
+				if (i == 0) {
+
+					// inicialización de registros
+					for (i = 0; i < 160; i++) {
+						MickeyS[i] = false;
+						MickeyR[i] = false;
+						MickeyRmask[i] = registroA[i];
+						MickeyFB0[i] = registroB[i];
+						MickeyFB1[i] = registroC[i];
+					}
+					for (i = 0; i < 159; i++) {
+						MickeyCOMP0[i] =  (formaRetroA.charAt(i) == '1');
+						MickeyCOMP1[i] =  (formaRetroB.charAt(i) == '1');
+					}
+
+					// llave e IV
+					for (i = 0; i < 128; i++) {
+						MickeyKey[i] = (formaKeyStream.charAt(i) == '1');
+						MickeyIV[i] = (formaRetroC.charAt(i) == '1');
+					}
+
+					// primer init con IV
+					for (i = 0; i < 128; i++) {
+						boolean iv_or_key_bit = MickeyIV[i];
+						CLOCK_KG(true, iv_or_key_bit);
+					}
+
+					// init con Key
+					for (i = 0; i < 128; i++) {
+						boolean iv_or_key_bit = MickeyKey[i];
+						CLOCK_KG(true, iv_or_key_bit);
+					}
+
+					// último init
+					for (i = 0; i < 160; i++) {
+						CLOCK_KG(true, false);
+					}
+
+					sbSalida.append("0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+				}
+
+				boolean bitKeyStream = CLOCK_KG(false, false);
+
+				sbSalida.append(bitKeyStream ? '1' : '0');
+
+			} else {
+
+				// retroalimentación y keystream según formulas
+				boolean bitRetroA = bitRetro(listasRetroA, registroA,
+						registroB, registroC);
+				boolean bitRetroB = bitRetro(listasRetroB, registroA,
+						registroB, registroC);
+				boolean bitRetroC = bitRetro(listasRetroC, registroA,
+						registroB, registroC);
+				boolean bitKeyStream = bitRetro(listasKeyStream, registroA,
+						registroB, registroC);
+
+				if (algo == 2) { // grain
+					if (i < cantBitsDescarte) {
+						bitRetroA ^= bitKeyStream;
+						bitRetroB ^= bitKeyStream;
+					}
+				}
+				// salida para string a retornar
+				sbSalida.append(bitKeyStream ? '1' : '0');
+
+				// desplazamiento de registros y seteo de bit de
+				// retroalimentación
+				desplazamiento(bitRetroA, registroA, cantBitsRegistroA);
+				desplazamiento(bitRetroB, registroB, cantBitsRegistroB);
+				desplazamiento(bitRetroC, registroC, cantBitsRegistroC);
+			}
+		}
+
+		return sbSalida.toString();
+	}
+
+	/**
+	 * Método interno.
+	 */
+	private static List<List<String>> parseoFormula(String formula) {
+		List<List<String>> ret = new ArrayList<List<String>>();
+		formula = formula.replaceAll("\\s", "");
+		formula = formula.replaceAll("\\+1", "+x1");
+		String[] terminos = formula.split("\\+");
+		int cantidadTerminos = terminos.length;
+		Pattern pattern = Pattern.compile("\\-?[abcABCx]\\d+");
+		for (int i = 0; i < cantidadTerminos; i++) {
+			Matcher matcher = pattern.matcher(terminos[i]);
+			List<String> productos = new ArrayList<String>();
+			while (matcher.find()) {
+				productos.add(matcher.group());
+			}
+			ret.add(productos);
+		}
+		return ret;
+	}
+
+	/**
+	 * Método interno.
+	 */
+	private static boolean bitRetro(List<List<String>> listasFormula,
+			boolean[] registroA, boolean[] registroB, boolean[] registroC) {
+		boolean ret = false;
+		for (int i = 0; i < listasFormula.size(); i++) {
+			List<String> productos = listasFormula.get(i);
+			boolean bitProducto = true;
+			for (int j = 0; j < productos.size(); j++) {
+				String productoStr = productos.get(j).toLowerCase();
+				if (productoStr.startsWith("a")) {
+					bitProducto &= registroA[Integer.parseInt(productoStr
+							.substring(1))];
+				} else if (productoStr.startsWith("-a")) {
+					bitProducto &= !registroA[Integer.parseInt(productoStr
+							.substring(2))];
+				} else if (productoStr.startsWith("b")) {
+					bitProducto &= registroB[Integer.parseInt(productoStr
+							.substring(1))];
+				} else if (productoStr.startsWith("-b")) {
+					bitProducto &= !registroB[Integer.parseInt(productoStr
+							.substring(2))];
+				} else if (productoStr.startsWith("c")) {
+					bitProducto &= registroC[Integer.parseInt(productoStr
+							.substring(1))];
+				} else if (productoStr.startsWith("-c")) {
+					bitProducto &= !registroC[Integer.parseInt(productoStr
+							.substring(2))];
+				} else if (productoStr.startsWith("x")) {
+					bitProducto &= true;
+				}
+			}
+			ret ^= bitProducto;
+		}
+		return ret;
+	}
+
+	/**
+	 * Método interno.
+	 */
+	private static void desplazamiento(boolean nuevoBit, boolean[] registro,
+			int cantBitsRegistro) {
+		if (cantBitsRegistro > 0) {
+			for (int i = cantBitsRegistro - 1; i > 0; i--) {
+				registro[i] = registro[i - 1];
+			}
+			registro[0] = nuevoBit;
+		}
+	}
+
+	/**
+	 * Método estático general que implementa el algoritmo de Berlekamp-Massey.
+	 * - Tomado desde en.wikipedia.org/wiki/Berlekamp-Massey_algorithm
+	 * 
+	 * @param bitStreamStr
+	 *            Cadena de bits (String) a analizar.
+	 * @return Los resultados en forma descriptiva (texto) (String).
+	 * @throws RuntimeException
+	 *             Conteniendo mensaje descriptivo del problema.
+	 */
+	public static String sBerlekampMassey(String bitStreamStr)
+			throws RuntimeException {
+
+		// conversión desde String
+		final int N = bitStreamStr.length();
+		int[] bitStream = new int[N];
+		for (int i = 0; i < N; i++) {
+			bitStream[i] = (bitStreamStr.charAt(i) == '1' ? 1 : 0);
+		}
+
+		// en.wikipedia.org/wiki/Berlekamp–Massey_algorithm
+		int[] b = new int[N];
+		int[] c = new int[N];
+		int[] t = new int[N];
+		b[0] = 1;
+		c[0] = 1;
+		int l = 0;
+		int m = -1;
+		for (int n = 0; n < N; n++) {
+			int d = 0;
+			for (int i = 0; i <= l; i++) {
+				d ^= c[i] * bitStream[n - i];
+			}
+			if (d == 1) {
+				System.arraycopy(c, 0, t, 0, N);
+				int N_M = n - m;
+				for (int j = 0; j < N - N_M; j++) {
+					c[N_M + j] ^= b[j];
+				}
+				if (l <= n / 2) {
+					l = n + 1 - l;
+					m = n;
+					System.arraycopy(t, 0, b, 0, N);
+				}
+			}
+		}
+		// salida (como "texto")
+		String ret = "Logitud de cadena o secuencia de entrada: " + N
+				+ " bits.\n";
+		ret += "Complejidad lineal (L): " + l + "\n";
+		ret += "LFSR calculado (polinomio C(D)): 1";
+		for (int i = 1; i < c.length; i++) {
+			if (c[i] == 1) {
+				ret += " + D^" + i;
+				// xxx
+				if (ret.length() > 300) {
+					ret = ret.substring(0, 300) + "...";
+					break;
+				}
+			}
+		}
+
+		ret += "\n";
+		ret += "LFSR calculado (s0, s1, ... , sL-1): ";
+		boolean plus = false;
+		for (int i = 1; i < c.length; i++) {
+			if (c[i] == 1) {
+				if (plus) {
+					ret += " +";
+				}
+				ret += " s" + (i - 1);
+				plus = true;
+				// xxx
+				if (ret.length() > 500) {
+					ret = ret.substring(0, 500) + "...";
+					break;
+				}
+			}
+		}
+
+		ret += "\n";
+		return ret;
+	}
+
+	/**
+	 * Prueba... A revisar.
+	 * 
+	 * @param bitStreamStr
+	 *            Cadena de bits (String) a analizar.
+	 * @return Los resultados en forma descriptiva (texto) (String).
+	 * @throws RuntimeException
+	 *             Conteniendo mensaje descriptivo del problema.
+	 */
+	public static String sBerlekampMasseyDeBruijn(String bitStreamStr)
+			throws RuntimeException {
+
+		int consec_ceros = 0;
+		int ceros = 0;
+		for (int i = 0; i < bitStreamStr.length(); i++) {
+			if (bitStreamStr.charAt(i) == '0') {
+				ceros++;
+				if (ceros > consec_ceros)
+					consec_ceros = ceros;
+			} else {
+				ceros = 0;
+			}
+		}
+		String cerosStr = "";
+		for (int i = 0; i < consec_ceros; i++) {
+			cerosStr += "0";
+		}
+		String ret = "Logitud de cadena o secuencia de entrada: "
+				+ bitStreamStr.length() + " bits.\n";
+		ret += "Cadena de " + consec_ceros
+				+ " ceros consecutivos reemplazada.\n";
+		ret += "\nBerlekampMassey:\n\n";
+		ret += sBerlekampMassey(bitStreamStr.replaceAll(cerosStr,
+				cerosStr.substring(1)));
+
+		return ret;
+
+	}
+
+	public static void HistorialExcel(String xlsFile, int cantBitsRegistroA,
+			int cantBitsRegistroB, int cantBitsRegistroC, String formaRetroA,
+			String formaRetroB, String formaRetroC, String formaKeyStream,
+			String estadoInicialA, String estadoInicialB,
+			String estadoInicialC, int maxT, String incognita)
+			throws RuntimeException {
+
+		// verficaciones o validaciones básicas generales
+
+		if (maxT < 0) {
+			throw new RuntimeException("Cantidad 't' no válida.");
+		} else if (xlsFile == null || xlsFile.equals("")) {
+			throw new RuntimeException("Archivo xls no definido.");
+		} else if (incognita == null || !incognita.matches("^s[0-9]+$")) {
+			throw new RuntimeException(
+					"Valor x no válido; debe usarse una única incógnita del estado completo sN, por ejemplo: 's0', o 's44'");
+
+		} else if (estadoInicialA.length() != cantBitsRegistroA) {
+			throw new RuntimeException(
+					"Longitud del estado incial de A no coincide con el tamaño de registro.");
+		} else if (estadoInicialB.length() != cantBitsRegistroB) {
+			throw new RuntimeException(
+					"Longitud del estado incial de B no coincide con el tamaño de registro.");
+		} else if (estadoInicialC.length() != cantBitsRegistroC) {
+			throw new RuntimeException(
+					"Longitud del estado incial de C no coincide con el tamaño de registro.");
+
+		} else if (cantBitsRegistroA > 0
+				&& !estadoInicialA.matches("^[01a-rA-RxX]+$")) {
+			throw new RuntimeException(
+					"Estado incial de A no expresado en binario.");
+		} else if (cantBitsRegistroB > 0
+				&& !estadoInicialB.matches("^[01a-rA-RxX]+$")) {
+			throw new RuntimeException(
+					"Estado incial de B no expresado en binario.");
+		} else if (cantBitsRegistroC > 0
+				&& !estadoInicialC.matches("^[01a-rA-RxX]+$")) {
+			throw new RuntimeException(
+					"Estado incial de C no expresado en binario.");
+
+		} else if (cantBitsRegistroA > 0
+				&& !formaRetroA.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de retroalimentación de A no válida.");
+		} else if (cantBitsRegistroB > 0
+				&& !formaRetroB.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de retroalimentación de B no válida.");
+		} else if (cantBitsRegistroC > 0
+				&& !formaRetroC.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de retroalimentación de C no válida.");
+		} else if (!formaKeyStream.matches("^[0-9\\-abcABC \\+]+$")) {
+			throw new RuntimeException(
+					"Forma de generación de keystream no válida.");
+		}
+
+		// /////////////////////////////////////////////////////////////////////
+
+		int sLen = cantBitsRegistroA + cantBitsRegistroB + cantBitsRegistroC;
+		int idxIncognita = Integer.parseInt(incognita.substring(1));
+		String s[] = new String[sLen];
+
+		int sInicioB = -1;
+		int sInicioC = -1;
+		if (cantBitsRegistroB > 0)
+			sInicioB = cantBitsRegistroA;
+		if (cantBitsRegistroC > 0)
+			sInicioC = cantBitsRegistroA + cantBitsRegistroB;
+
+		try {
+
+			File outFile = new File(xlsFile);
+			BufferedWriter writer = new BufferedWriter(new FileWriter(outFile));
+
+			int idxTmp = 0;
+			for (int i = 0; i < cantBitsRegistroA; i++) {
+				s[idxTmp++] = "" + estadoInicialA.charAt(i);
+			}
+			for (int i = 0; i < cantBitsRegistroB; i++) {
+				s[idxTmp++] = "" + estadoInicialB.charAt(i);
+			}
+			for (int i = 0; i < cantBitsRegistroC; i++) {
+				s[idxTmp++] = "" + estadoInicialC.charAt(i);
+			}
+			s[idxIncognita] = "s" + idxIncognita;
+
+			writer.write("<table border='1'>");
+
+			writer.write("<tr><td><b>t</b></td><td><b>z</b></td>");
+			for (int i = 0; i < sLen; i++) {
+				writer.write("<td><b>s" + i + "</b></td>");
+			}
+			writer.write("<td><b>variables</b></td>");
+			writer.write("</tr>");
+			writer.newLine();
+
+			writer.write("<tr><td>0</td><td>-</td>");
+			for (int i = 0; i < sLen; i++) {
+				writer.write("<td>" + s[i] + "</td>");
+			}
+			writer.write("<td>1</td>");
+			writer.write("</tr>");
+			writer.newLine();
+
+			formaRetroA = retroFormulaS_pre(formaRetroA, s, sInicioB, sInicioC);
+			formaRetroB = retroFormulaS_pre(formaRetroB, s, sInicioB, sInicioC);
+			formaRetroC = retroFormulaS_pre(formaRetroC, s, sInicioB, sInicioC);
+			formaKeyStream = retroFormulaS_pre(formaKeyStream, s, sInicioB,
+					sInicioC);
+
+			for (int t = 1; t <= maxT; t++) {
+
+				writer.write("<tr><td>" + t + "</td>");
+
+				String retroA = retroFormulaS(formaRetroA, s, sInicioB,
+						sInicioC);
+				String retroB = retroFormulaS(formaRetroB, s, sInicioB,
+						sInicioC);
+				String retroC = retroFormulaS(formaRetroC, s, sInicioB,
+						sInicioC);
+				String retroZ = retroFormulaS(formaKeyStream, s, sInicioB,
+						sInicioC);
+
+				writer.write("<td>" + retroZ + "</td>");
+
+				for (int i = sLen - 1; i > 0; i--) {
+					s[i] = s[i - 1];
+				}
+				s[0] = retroA;
+				if (sInicioB != -1)
+					s[sInicioB] = retroB;
+				if (sInicioC != -1)
+					s[sInicioC] = retroC;
+
+				int variablesCount = 0;
+				for (int i = 0; i < sLen; i++) {
+					writer.write("<td>" + s[i] + "</td>");
+					if (s[i].length() > 1)
+						variablesCount++;
+				}
+				writer.write("<td>" + variablesCount + "</td>");
+				writer.write("</tr>");
+				writer.newLine();
+			}
+
+			writer.write("</table>");
+			writer.newLine();
+			writer.close();
+
+		} catch (Exception e) {
+			throw new RuntimeException("ERROR AL GENERAR HISTORIAL: "
+					+ e.getMessage());
+		}
+	}
+
+	public static String retroFormulaS_pre(String formula, String s[],
+			int sInicioB, int sInicioC) {
+
+		String formulaS = formula;
+		if (formulaS == null || formulaS.equals(""))
+			return null;
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		formulaS = formulaS.replaceAll("\\s", "");
+		formulaS = formulaS.replaceAll("\\*", "");
+		formulaS = formulaS.replaceAll("\\+", " XOR ");
+		formulaS = formulaS.replaceAll("([abcABC]\\d+)([abcABC]\\d+)",
+				"$1 AND $2");
+		if (!formulaS.endsWith(" "))
+			formulaS += " ";
+		formulaS = " " + formulaS;
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		for (int i = 0; i < s.length; i++) {
+			formulaS = formulaS.replaceAll("[aA]" + i + " ", "s" + (i + 0)
+					+ " ");
+			formulaS = formulaS.replaceAll("[bB]" + i + " ", "s"
+					+ (i + sInicioB) + " ");
+			formulaS = formulaS.replaceAll("[cC]" + i + " ", "s"
+					+ (i + sInicioC) + " ");
+		}
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		return formulaS;
+	}
+
+	public static String retroFormulaS(String formula, String s[],
+			int sInicioB, int sInicioC) {
+
+		String formulaS = formula;
+		if (formulaS == null || formulaS.equals(""))
+			return null;
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		formulaS = formulaS.replaceAll("s", "S");
+		for (int i = 0; i < s.length; i++) {
+			formulaS = formulaS.replaceAll("S" + i + " ", s[i] + " ");
+		}
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		// and
+		while (true) {
+			String tmp = formulaS;
+
+			tmp = tmp.replace(" 0 AND 0 ", " 0 ");
+			tmp = tmp.replace(" 0 AND 1 ", " 0 ");
+			tmp = tmp.replace(" 1 AND 0 ", " 0 ");
+			tmp = tmp.replace(" 1 AND 1 ", " 1 ");
+
+			tmp = tmp.replaceFirst(" ([Ns]+\\d+) AND 0 ", " 0 ");
+			tmp = tmp.replaceFirst(" ([Ns]+\\d+) AND 1 ", " $1 ");
+			tmp = tmp.replaceFirst(" 0 AND ([Ns]+\\d+) ", " 0 ");
+			tmp = tmp.replaceFirst(" 1 AND ([Ns]+\\d+) ", " $1 ");
+
+			tmp = tmp.replaceFirst(" ([Na-rA-R]+) AND 0 ", " 0 ");
+			tmp = tmp.replaceFirst(" ([Na-rA-R]+) AND 1 ", " $1 ");
+			tmp = tmp.replaceFirst(" 0 AND ([Na-rA-R]+) ", " 0 ");
+			tmp = tmp.replaceFirst(" 1 AND ([Na-rA-R]+) ", " $1 ");
+
+			for (int i = 0; i < s.length; i++) {
+				tmp = tmp
+						.replace(" s" + i + " AND s" + i + " ", " s" + i + " ");
+				tmp = tmp.replace(" Ns" + i + " AND Ns" + i + " ", " Ns" + i
+						+ " ");
+				tmp = tmp.replace(" Ns" + i + " AND s" + i + " ", " 0 ");
+				tmp = tmp.replace(" s" + i + " AND Ns" + i + " ", " 0 ");
+			}
+
+			if (tmp.equals(formulaS))
+				break;
+			formulaS = tmp;
+		}
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		// xor
+		while (true) {
+
+			String tmp = formulaS;
+
+			tmp = tmp.replace(" 0 XOR 0 ", " 0 ");
+			tmp = tmp.replace(" 0 XOR 1 ", " 1 ");
+			tmp = tmp.replace(" 1 XOR 0 ", " 1 ");
+			tmp = tmp.replace(" 1 XOR 1 ", " 0 ");
+
+			tmp = tmp.replaceFirst(" ([Ns]+\\d+) XOR 0 ", " $1 ");
+			tmp = tmp.replaceFirst(" ([Ns]+\\d+) XOR 1 ", " N$1 ");
+			tmp = tmp.replaceFirst(" 0 XOR ([Ns]+\\d+) ", " $1 ");
+			tmp = tmp.replaceFirst(" 1 XOR ([Ns]+\\d+) ", " N$1 ");
+
+			tmp = tmp.replaceFirst(" ([Na-rA-R]+) XOR 0 ", " $1 ");
+			tmp = tmp.replaceFirst(" ([Na-rA-R]+) XOR 1 ", " N$1 ");
+			tmp = tmp.replaceFirst(" 0 XOR ([Na-rA-R]+) ", " $1 ");
+			tmp = tmp.replaceFirst(" 1 XOR ([Na-rA-R]+) ", " N$1 ");
+
+			// limpiar posibles doble/s negación/es
+			tmp = tmp.replaceAll("NN", "");
+
+			for (int i = 0; i < s.length; i++) {
+				tmp = tmp.replace(" s" + i + " XOR s" + i + " ", " 0 ");
+				tmp = tmp.replace(" Ns" + i + " XOR Ns" + i + " ", " 0 ");
+				tmp = tmp.replace(" Ns" + i + " XOR s" + i + " ", " 1 ");
+				tmp = tmp.replace(" s" + i + " XOR Ns" + i + " ", " 1 ");
+			}
+
+			if (tmp.equals(formulaS))
+				break;
+			formulaS = tmp;
+		}
+
+		if (DEBUG)
+			System.out.print(formulaS + "\n");
+
+		return formulaS.trim();
+	}
+
+	static boolean CLOCK_KG(boolean mixing, boolean input_bit) {
+		boolean Keystream_bit = MickeyR[0] ^ MickeyS[0];
+		boolean Control_bit_R = MickeyS[54] ^ MickeyR[106];
+		boolean Control_bit_S = MickeyS[106] ^ MickeyR[53];
+		if (mixing)
+			CLOCK_R(input_bit ^ MickeyS[80], Control_bit_R);
+		else
+			CLOCK_R(input_bit, Control_bit_R);
+		CLOCK_S(input_bit, Control_bit_S);
+		return Keystream_bit;
+	}
+
+	static void CLOCK_S(boolean input_bit, boolean control_bit_s) {
+		boolean s_hat[] = new boolean[160];
+		boolean Feedback_bit = MickeyS[159] ^ input_bit;
+		for (int i = 158; i > 0; i--)
+			s_hat[i] = MickeyS[i - 1]
+					^ ((MickeyS[i] ^ MickeyCOMP0[i]) & (MickeyS[i + 1] ^ MickeyCOMP1[i]));
+		s_hat[0] = false;
+		s_hat[159] = MickeyS[158];
+		for (int i = 0; i < 160; i++)
+			MickeyS[i] = s_hat[i];
+		if (Feedback_bit) {
+			if (control_bit_s) {
+				for (int i = 0; i < 160; i++)
+					MickeyS[i] = s_hat[i] ^ MickeyFB1[i];
+			} else {
+				for (int i = 0; i < 160; i++)
+					MickeyS[i] = s_hat[i] ^ MickeyFB0[i];
+			}
+		}
+	}
+
+	static void CLOCK_R(boolean input_bit, boolean control_bit_r) {
+		boolean Feedback_bit = MickeyR[159] ^ input_bit;
+		if (control_bit_r) {
+			if (Feedback_bit) {
+				for (int i = 159; i > 0; i--)
+					MickeyR[i] = MickeyR[i - 1] ^ MickeyR[i] ^ MickeyRmask[i];
+				MickeyR[0] = MickeyRmask[0] ^ MickeyR[0];
+			} else {
+				for (int i = 159; i > 0; i--)
+					MickeyR[i] = MickeyR[i - 1] ^ MickeyR[i];
+			}
+		} else {
+			if (Feedback_bit) {
+				for (int i = 159; i > 0; i--)
+					MickeyR[i] = MickeyR[i - 1] ^ MickeyRmask[i];
+				MickeyR[0] = MickeyRmask[0];
+			} else {
+				for (int i = 159; i > 0; i--)
+					MickeyR[i] = MickeyR[i - 1];
+				MickeyR[0] = false;
+			}
+		}
+	}
+
+}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename local variable &apos;sIdxTmp&apos; in &apos;ar.edu.iese.laboratorio.LFSR.NLFSR.HistorialExcel(...)&apos; to &apos;idxTmp&apos;&#x0D;&#x0A;- Original project: &apos;NLFSRs&apos;&#x0D;&#x0A;- Original element: &apos;ar.edu.iese.laboratorio.LFSR.NLFSR.HistorialExcel(String, int, int, int, String, String, String, String, String, String, int, String).sIdxTmp&apos;&#x0D;&#x0A;- Renamed element: &apos;sIdxTmp&apos;&#x0D;&#x0A;- Update references to refactored element" description="Rename local variable &apos;sIdxTmp&apos;" id="org.eclipse.jdt.ui.rename.local.variable" input="/src&lt;ar.edu.iese.laboratorio.LFSR{NLFSR.java[NLFSR~HistorialExcel~QString;~I~I~I~QString;~QString;~QString;~QString;~QString;~QString;~I~QString;@sIdxTmp!14061!14076!14065!14071!I!0!false" name="idxTmp" references="true" stamp="1379352876437" version="1.0"/>
+</session>
